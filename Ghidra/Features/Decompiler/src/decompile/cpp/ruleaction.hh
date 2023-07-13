@@ -1643,5 +1643,16 @@ public:
   virtual int4 applyOp(PcodeOp *op,Funcdata &data);
 };
 
+class RulePPCInt2FloatCast : public Rule {
+public:
+  RulePPCInt2FloatCast(const string &g) : Rule(g, 0, "ppcint2floatcast") {}	///< Constructor
+  virtual Rule *clone(const ActionGroupList &grouplist) const {
+    if (!grouplist.contains(getGroup())) return (Rule *)0;
+    return new RulePPCInt2FloatCast(getGroup());
+  }
+  virtual void getOpList(vector<uint4> &oplist) const;
+  virtual int4 applyOp(PcodeOp *op, Funcdata &data);
+};
+
 } // End namespace ghidra
 #endif

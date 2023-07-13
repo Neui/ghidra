@@ -10434,4 +10434,83 @@ int4 RuleLzcountShiftBool::applyOp(PcodeOp *op,Funcdata &data)
   return 0;
 }
 
+/// \class RulePPCInt2FloatCast
+/// \brief Simplify inline 32-bit (u)int to float casting used in 32-bit PowerPC.
+///
+/// Operation sequence recommended in §3.3.8.3 of
+/// The PowerPC Compiler Writer's Guide (page 83/PDF page 103)
+/// https://www.warthman.com/images/IBM_PPC_Compiler_Writer's_Guide-cwg.pdf#G9.303610
+///
+/// (double)(CONCAT44(0x43300000, (int)V ^ 0x80000000)) - magic => (float)V
+/// (double)(CONCAT44(0x43300000, (uint)V)) - magic => (float)V
+void RulePPCInt2FloatCast::getOpList(vector<uint4> &oplist) const
+{
+  oplist.push_back(CPUI_FLOAT_SUB);
+}
+
+int4 RulePPCInt2FloatCast::applyOp(PcodeOp *op, Funcdata &data)
+{
+  Varnode *magic_sub = op->getIn(1);
+  if (magic_sub->getSize() != 8
+      || !magic_sub->isConstant()) {
+    return 0;
+  }
+
+  uintb magic_sub_value = magic_sub->getOffset();
+  constexpr uintb magic_sub_constant_32s = 0x4330000080000000;
+  constexpr uintb magic_sub_constant_32u = 0x4330000000000000;
+  if (magic_sub_value != magic_sub_constant_32s
+      && magic_sub_value != magic_sub_constant_32u) {
+    return 0;
+  }
+
+  Varnode *concat_value = op->getIn(0);
+  PcodeOp *concat_op = concat_value->getDef();
+  if (concat_value->getSize() != 8
+      || concat_op->code() != CPUI_PIECE) {
+    return 0;
+  }
+
+  Varnode *concat_const = concat_op->getIn(0);
+  constexpr uintb magic_concat_constant = 0x43300000;
+  if (concat_const->getSize() != 4
+      || concat_const->getOffset() != magic_concat_constant) {
+    return 0;
+  }
+
+  Varnode *value = concat_op->getIn(1); // The int to cast from
+  if (value->getSize() != 4) {
+    return 0;
+  }
+
+  if (magic_sub_value == magic_sub_constant_32s) {
+    // When using signed 32-bit int, it does an additional XOR that
+    // we need to undo.
+    PcodeOp *value_op = value->getDef();
+    if (value_op->code() != CPUI_INT_XOR
+	|| value_op->getIn(0)->getSize() != 4) {
+      return 0;
+    }
+
+    Varnode *xor_const = value_op->getIn(1);
+    if (xor_const->getSize() != 4
+	|| !xor_const->isConstant()
+	|| xor_const->getOffset() != 0x80000000) {
+      return 0;
+    }
+
+    value = value_op->getIn(0);
+  }
+
+  PcodeOp *cast_op = data.newOp(1, op->getAddr());
+  data.opSetOpcode(cast_op, CPUI_FLOAT_INT2FLOAT);
+  data.opSetInput(cast_op, value, 0);
+  data.newUniqueOut(op->getOut()->getSize(), cast_op);
+  data.opInsertBefore(cast_op, op);
+  data.totalReplace(op->getOut(), cast_op->getOut());
+  data.opDestroy(op);
+
+  return 1;
+}
+
 } // End namespace ghidra
