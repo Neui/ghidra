@@ -10513,4 +10513,40 @@ int4 RulePPCInt2FloatCast::applyOp(PcodeOp *op, Funcdata &data)
   return 1;
 }
 
+/// \class RuleInverseComparison
+/// \brief 1 - (a == b) → !(a == b)
+void RuleOneSubNegate::getOpList(vector<uint4> &oplist) const
+{
+  oplist.push_back(CPUI_INT_SUB);
+}
+
+int4 RuleOneSubNegate::applyOp(PcodeOp *op, Funcdata &data)
+{
+  Varnode *left = op->getIn(0);
+  if (!left->isConstant() || left->getOffset() != 1) {
+    return 0;
+  }
+
+  Varnode *right = op->getIn(1);
+  PcodeOp *right_op = right->getDef();
+  // TODO: Floats, but becuase of NaNs it's more complicated
+  if (right_op->code() != CPUI_INT_EQUAL
+      && right_op->code() != CPUI_INT_NOTEQUAL
+      && right_op->code() != CPUI_INT_SLESS
+      && right_op->code() != CPUI_INT_SLESSEQUAL
+      && right_op->code() != CPUI_INT_LESS
+      && right_op->code() != CPUI_INT_LESSEQUAL
+      && right_op->code() != CPUI_BOOL_NEGATE
+      && right_op->code() != CPUI_BOOL_XOR
+      && right_op->code() != CPUI_BOOL_AND
+      && right_op->code() != CPUI_BOOL_OR) {
+    return 0;
+  }
+
+  data.opSetOpcode(op, CPUI_BOOL_NEGATE);
+  data.opRemoveInput(op, 0);
+
+  return 1;
+}
+
 } // End namespace ghidra
